@@ -88,6 +88,8 @@ export async function checkTable(
 
   const issues: GtfsIssue[] = [];
   const columnIndex = new Map(table.columns.map((column, index) => [column, index]));
+  const requiredColumns = new Set(rules.required);
+  const optionalColumns = table.columns.filter((column) => !requiredColumns.has(column));
   const missingColumns = rules.required.filter((column) => !columnIndex.has(column));
   for (const column of missingColumns) {
     issues.push(makeIssue({ severity: "error", scope: "file", file: fileName, column, title: `Missing ${column}`, detail: `${fileName} requires a ${column} column.` }));
@@ -99,6 +101,7 @@ export async function checkTable(
   const keys = new Set<string>();
   let previousGroup = "";
   let previousSequence = -1;
+  let previousDistance: number | null = null;
 
   const record = (key: string, row: number, severity: IssueSeverity, title: string, detail: string, column?: string) => {
     const current = counts.get(key);
@@ -113,6 +116,9 @@ export async function checkTable(
 
     for (const required of rules.required) {
       if (!value(required)) record(`blank-${required}`, displayRow, "error", `Blank ${required}`, `Required values are empty in {count} ${checkedRows < table.rowCount ? "checked " : ""}rows.`, required);
+    }
+    for (const optional of optionalColumns) {
+      if (!value(optional)) record(`blank-optional-${optional}`, displayRow, "warning", `Empty optional field: ${optional}`, `The ${optional} field is empty in {count} of ${checkedRows.toLocaleString()} ${checkedRows < table.rowCount ? "checked " : ""}rows.`, optional);
     }
 
     // The two largest GTFS tables are ordered by their composite sequence keys;
@@ -157,7 +163,18 @@ export async function checkTable(
     if (groupColumn && sequenceColumn && NON_NEGATIVE_INTEGER.test(value(sequenceColumn))) {
       const group = value(groupColumn);
       const sequence = Number(value(sequenceColumn));
+      if (group !== previousGroup) previousDistance = null;
       if (group === previousGroup && sequence <= previousSequence) record("sequence-order", displayRow, "error", "Sequence does not increase", `{count} rows do not increase within their ${groupColumn}.`, sequenceColumn);
+      const rawDistance = value("shape_dist_traveled");
+      if (rawDistance) {
+        const distance = Number(rawDistance);
+        if (!Number.isFinite(distance) || distance < 0) {
+          record("invalid-shape-distance", displayRow, "error", "Invalid shape_dist_traveled", "{count} values are not non-negative numbers.", "shape_dist_traveled");
+        } else {
+          if (group === previousGroup && previousDistance !== null && distance <= previousDistance) record("shape-distance-order", displayRow, "error", "shape_dist_traveled does not increase", `{count} rows have a distance equal to or below the previous distance within their ${groupColumn}.`, "shape_dist_traveled");
+          previousDistance = distance;
+        }
+      }
       previousGroup = group;
       previousSequence = sequence;
     }

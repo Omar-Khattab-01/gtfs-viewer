@@ -326,7 +326,7 @@ export default function Home() {
       <div className="summary-card warning"><span>Warnings</span><strong>{warningCount}</strong><small>Worth reviewing before publishing</small></div>
       <div className="summary-card checked"><span>Files checked</span><strong>{checkedFiles.size}<em>/{files.length}</em></strong><small>{checkCompleted ? "Full feed check complete" : "Every supported row will be checked"}</small></div>
     </div>
-    <div className="check-note"><strong>What is checked?</strong><span>Required files and columns, blank IDs, duplicate keys, coordinates, dates, times, route types, colours, and stop or shape sequence order.</span></div>
+    <div className="check-note"><strong>What is checked?</strong><span>Required files and values, empty optional fields, duplicate keys, coordinates, dates, times, route types, colours, sequence order, and shape distance progression.</span></div>
     <div className="issue-list">
       {issues.length === 0 ? <div className="checks-clear"><span>✓</span><strong>{checkCompleted ? "No issues found" : "Ready to check the feed"}</strong><p>{checkCompleted ? "The full scan did not find a problem covered by these checks." : "Run the full check to scan every supported file and row in this feed."}</p></div> : [...issues].sort((a, b) => a.severity.localeCompare(b.severity)).map((issue) => (
         <button key={issue.id} className={`issue-row ${issue.severity}`} onClick={() => openIssue(issue)} disabled={!issue.file}>

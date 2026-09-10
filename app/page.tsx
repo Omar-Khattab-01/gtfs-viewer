@@ -153,6 +153,7 @@ export default function Home() {
 
   const activeFile = files.find((file) => file.name === activeName) || files[0];
   const searchDisabled = activeTable.rowCount > SEARCH_LIMIT;
+  const hasCheckResults = checkCompleted || checkedFiles.size > 0 || issues.length > 0;
   const errorCount = issues.filter((issue) => issue.severity === "error").length;
   const warningCount = issues.filter((issue) => issue.severity === "warning").length;
   const issueCountByFile = useMemo(() => {
@@ -224,6 +225,10 @@ export default function Home() {
     if (!session) return;
     feedSessionsRef.current.set(activeFeedId, { ...session, name: feedName, status, files, activeName, issues, checkedFiles: [...checkedFiles], checkCompleted, showIssues });
   }, [activeFeedId, activeName, checkCompleted, checkedFiles, feedName, files, issues, showIssues, status]);
+
+  useEffect(() => {
+    saveCurrentFeed();
+  }, [saveCurrentFeed]);
 
   const scrollToTableRow = useCallback((fileRow: number, table: ActiveTable) => {
     const rowIndex = Math.max(0, fileRow - 2);
@@ -535,7 +540,7 @@ export default function Home() {
         {view === "data" && <section className={`viewer ${showIssues ? "with-issue-panel" : ""}`}>
           <div className="viewer-head">
             <div><p className="file-kicker">Viewing file</p><h2>{activeFile?.name || "No file selected"}</h2><p>{loadingFile ? `Preparing ${formatBytes(activeFile?.size || 0)} file…` : `${activeTable.rowCount.toLocaleString()} rows · ${activeTable.columns.length} columns`}</p></div>
-            <div className="viewer-tools">{checkCompleted && <button className={`issue-toggle ${showIssues ? "active" : ""}`} aria-pressed={showIssues} onClick={() => { const next = !showIssues; setShowIssues(next); if (next) { const firstIssue = activeFileIssues[0]; setFocusIssue(firstIssue || null); setFocusRow(firstIssue?.row || null); } else { setFocusIssue(null); setFocusRow(null); } }}><span className="issue-toggle-mark">!</span><span>{showIssues ? "Issues on" : "Show issues"}</span>{activeFileIssues.length > 0 && <b>{activeFileIssues.length}</b>}</button>}<label className={`search-box ${searchDisabled ? "disabled" : ""}`} title={searchDisabled ? "Search is disabled for very large files to keep the viewer responsive." : undefined}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchDisabled ? "Search off for large files" : "Search this file"} aria-label="Search this file" disabled={searchDisabled} />{query && <button onClick={() => setQuery("")} aria-label="Clear search">×</button>}</label><button className={`wrap-button ${wrap ? "active" : ""}`} onClick={() => setWrap((value) => !value)} title="Toggle cell text wrapping">↵ <span>Wrap</span></button></div>
+            <div className="viewer-tools">{hasCheckResults && <button className={`issue-toggle ${showIssues ? "active" : ""}`} aria-pressed={showIssues} onClick={() => { const next = !showIssues; setShowIssues(next); if (next) { const firstIssue = activeFileIssues[0]; setFocusIssue(firstIssue || null); setFocusRow(firstIssue?.row || null); } else { setFocusIssue(null); setFocusRow(null); } }}><span className="issue-toggle-mark">!</span><span>{showIssues ? "Issues on" : "Show issues"}</span>{activeFileIssues.length > 0 && <b>{activeFileIssues.length}</b>}</button>}<label className={`search-box ${searchDisabled ? "disabled" : ""}`} title={searchDisabled ? "Search is disabled for very large files to keep the viewer responsive." : undefined}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchDisabled ? "Search off for large files" : "Search this file"} aria-label="Search this file" disabled={searchDisabled} />{query && <button onClick={() => setQuery("")} aria-label="Clear search">×</button>}</label><button className={`wrap-button ${wrap ? "active" : ""}`} onClick={() => setWrap((value) => !value)} title="Toggle cell text wrapping">↵ <span>Wrap</span></button></div>
           </div>
           {showIssues && <div className={`viewer-issue-panel ${selectedViewerIssue?.severity || "clear"}`}>
             {selectedViewerIssue ? <>

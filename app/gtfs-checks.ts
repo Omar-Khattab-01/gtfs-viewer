@@ -6,6 +6,7 @@ export type GtfsIssue = {
   scope: "feed" | "file";
   file?: string;
   row?: number;
+  column?: string;
   title: string;
   detail: string;
 };
@@ -79,6 +80,7 @@ export async function checkTable(
   fileName: string,
   table: TableAccessor,
   maxRows = 50_000,
+  onProgress?: (completedRows: number, totalRows: number) => void,
 ): Promise<GtfsIssue[]> {
   const normalizedName = fileName.toLowerCase();
   const rules = FILE_RULES[normalizedName];
@@ -88,20 +90,20 @@ export async function checkTable(
   const columnIndex = new Map(table.columns.map((column, index) => [column, index]));
   const missingColumns = rules.required.filter((column) => !columnIndex.has(column));
   for (const column of missingColumns) {
-    issues.push(makeIssue({ severity: "error", scope: "file", file: fileName, title: `Missing ${column}`, detail: `${fileName} requires a ${column} column.` }));
+    issues.push(makeIssue({ severity: "error", scope: "file", file: fileName, column, title: `Missing ${column}`, detail: `${fileName} requires a ${column} column.` }));
   }
   if (missingColumns.length) return issues;
 
   const checkedRows = Math.min(table.rowCount, maxRows);
-  const counts = new Map<string, { count: number; row: number; severity: IssueSeverity; title: string; detail: string }>();
+  const counts = new Map<string, { count: number; row: number; column?: string; severity: IssueSeverity; title: string; detail: string }>();
   const keys = new Set<string>();
   let previousGroup = "";
   let previousSequence = -1;
 
-  const record = (key: string, row: number, severity: IssueSeverity, title: string, detail: string) => {
+  const record = (key: string, row: number, severity: IssueSeverity, title: string, detail: string, column?: string) => {
     const current = counts.get(key);
     if (current) current.count++;
-    else counts.set(key, { count: 1, row, severity, title, detail });
+    else counts.set(key, { count: 1, row, column, severity, title, detail });
   };
 
   for (let rowIndex = 0; rowIndex < checkedRows; rowIndex++) {
@@ -110,10 +112,12 @@ export async function checkTable(
     const displayRow = rowIndex + 2;
 
     for (const required of rules.required) {
-      if (!value(required)) record(`blank-${required}`, displayRow, "error", `Blank ${required}`, `Required values are empty in {count} ${checkedRows < table.rowCount ? "checked " : ""}rows.`);
+      if (!value(required)) record(`blank-${required}`, displayRow, "error", `Blank ${required}`, `Required values are empty in {count} ${checkedRows < table.rowCount ? "checked " : ""}rows.`, required);
     }
 
-    if (rules.key) {
+    // The two largest GTFS tables are ordered by their composite sequence keys;
+    // their duplicate sequences are caught below without retaining millions of strings.
+    if (rules.key && normalizedName !== "stop_times.txt" && normalizedName !== "shapes.txt") {
       const keyValue = rules.key.map(value).join("\u0000");
       if (keyValue && !keyValue.includes("\u0000\u0000")) {
         if (keys.has(keyValue)) record("duplicate-key", displayRow, "error", "Duplicate primary key", `The file contains {count} repeated ${rules.key.join(" + ")} values.`);
@@ -123,29 +127,29 @@ export async function checkTable(
 
     for (const column of ["stop_lat", "shape_pt_lat"]) {
       const raw = value(column);
-      if (raw && (!Number.isFinite(Number(raw)) || Number(raw) < -90 || Number(raw) > 90)) record(`invalid-${column}`, displayRow, "error", `Invalid ${column}`, `{count} values fall outside the latitude range of -90 to 90.`);
+      if (raw && (!Number.isFinite(Number(raw)) || Number(raw) < -90 || Number(raw) > 90)) record(`invalid-${column}`, displayRow, "error", `Invalid ${column}`, `{count} values fall outside the latitude range of -90 to 90.`, column);
     }
     for (const column of ["stop_lon", "shape_pt_lon"]) {
       const raw = value(column);
-      if (raw && (!Number.isFinite(Number(raw)) || Number(raw) < -180 || Number(raw) > 180)) record(`invalid-${column}`, displayRow, "error", `Invalid ${column}`, `{count} values fall outside the longitude range of -180 to 180.`);
+      if (raw && (!Number.isFinite(Number(raw)) || Number(raw) < -180 || Number(raw) > 180)) record(`invalid-${column}`, displayRow, "error", `Invalid ${column}`, `{count} values fall outside the longitude range of -180 to 180.`, column);
     }
 
     if (normalizedName === "routes.txt") {
-      if (value("route_type") && !VALID_ROUTE_TYPES.has(value("route_type"))) record("route-type", displayRow, "error", "Unknown route_type", "{count} routes use a route_type outside the GTFS core values.");
+      if (value("route_type") && !VALID_ROUTE_TYPES.has(value("route_type"))) record("route-type", displayRow, "error", "Unknown route_type", "{count} routes use a route_type outside the GTFS core values.", "route_type");
       if (!value("route_short_name") && !value("route_long_name")) record("route-name", displayRow, "error", "Route has no name", "{count} routes have neither route_short_name nor route_long_name.");
       for (const colorColumn of ["route_color", "route_text_color"]) {
-        if (value(colorColumn) && !HEX_PATTERN.test(value(colorColumn))) record(`color-${colorColumn}`, displayRow, "warning", `Invalid ${colorColumn}`, `{count} values are not six-character hexadecimal colours.`);
+        if (value(colorColumn) && !HEX_PATTERN.test(value(colorColumn))) record(`color-${colorColumn}`, displayRow, "warning", `Invalid ${colorColumn}`, `{count} values are not six-character hexadecimal colours.`, colorColumn);
       }
     }
 
     for (const timeColumn of ["arrival_time", "departure_time", "start_time", "end_time"]) {
-      if (value(timeColumn) && !TIME_PATTERN.test(value(timeColumn))) record(`time-${timeColumn}`, displayRow, "error", `Invalid ${timeColumn}`, `{count} values do not use HH:MM:SS format.`);
+      if (value(timeColumn) && !TIME_PATTERN.test(value(timeColumn))) record(`time-${timeColumn}`, displayRow, "error", `Invalid ${timeColumn}`, `{count} values do not use HH:MM:SS format.`, timeColumn);
     }
     for (const dateColumn of ["date", "start_date", "end_date"]) {
-      if (value(dateColumn) && !validDate(value(dateColumn))) record(`date-${dateColumn}`, displayRow, "error", `Invalid ${dateColumn}`, `{count} values are not valid YYYYMMDD dates.`);
+      if (value(dateColumn) && !validDate(value(dateColumn))) record(`date-${dateColumn}`, displayRow, "error", `Invalid ${dateColumn}`, `{count} values are not valid YYYYMMDD dates.`, dateColumn);
     }
     for (const sequenceColumn of ["stop_sequence", "shape_pt_sequence"]) {
-      if (value(sequenceColumn) && !NON_NEGATIVE_INTEGER.test(value(sequenceColumn))) record(`sequence-${sequenceColumn}`, displayRow, "error", `Invalid ${sequenceColumn}`, `{count} values are not non-negative integers.`);
+      if (value(sequenceColumn) && !NON_NEGATIVE_INTEGER.test(value(sequenceColumn))) record(`sequence-${sequenceColumn}`, displayRow, "error", `Invalid ${sequenceColumn}`, `{count} values are not non-negative integers.`, sequenceColumn);
     }
 
     const groupColumn = normalizedName === "stop_times.txt" ? "trip_id" : normalizedName === "shapes.txt" ? "shape_id" : "";
@@ -153,16 +157,21 @@ export async function checkTable(
     if (groupColumn && sequenceColumn && NON_NEGATIVE_INTEGER.test(value(sequenceColumn))) {
       const group = value(groupColumn);
       const sequence = Number(value(sequenceColumn));
-      if (group === previousGroup && sequence <= previousSequence) record("sequence-order", displayRow, "error", "Sequence does not increase", `{count} rows do not increase within their ${groupColumn}.`);
+      if (group === previousGroup && sequence <= previousSequence) record("sequence-order", displayRow, "error", "Sequence does not increase", `{count} rows do not increase within their ${groupColumn}.`, sequenceColumn);
       previousGroup = group;
       previousSequence = sequence;
     }
 
-    if ((rowIndex + 1) % 2_000 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    if ((rowIndex + 1) % 2_000 === 0) {
+      onProgress?.(rowIndex + 1, checkedRows);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
 
+  onProgress?.(checkedRows, checkedRows);
+
   for (const item of counts.values()) {
-    issues.push(makeIssue({ severity: item.severity, scope: "file", file: fileName, row: item.row, title: item.title, detail: item.detail.replace("{count}", item.count.toLocaleString()) }));
+    issues.push(makeIssue({ severity: item.severity, scope: "file", file: fileName, row: item.row, column: item.column, title: item.title, detail: item.detail.replace("{count}", item.count.toLocaleString()) }));
   }
 
   if (checkedRows < table.rowCount) {

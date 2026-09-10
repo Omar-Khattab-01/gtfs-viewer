@@ -12,6 +12,8 @@ large datasets.
 - Uses pinned, color-coded column headers
 - Virtualizes very large files such as `shapes.txt` and `stop_times.txt`
 - Supports search for normal-sized files and optional cell wrapping
+- Checks required files and columns, duplicate keys, blank IDs, coordinate
+  ranges, dates, times, route types, colours, and sequence ordering
 - Works on desktop and mobile browsers
 
 ## Local development

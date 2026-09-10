@@ -9,6 +9,7 @@ export type GtfsIssue = {
   column?: string;
   emptyValue?: boolean;
   wholeColumn?: boolean;
+  occurrences?: number;
   title: string;
   detail: string;
 };
@@ -190,7 +191,7 @@ export async function checkTable(
   onProgress?.(checkedRows, checkedRows);
 
   for (const item of counts.values()) {
-    issues.push(makeIssue({ severity: item.severity, scope: "file", file: fileName, row: item.row, column: item.column, emptyValue: Boolean(item.emptyColumn), wholeColumn: Boolean(item.emptyColumn) && item.count === checkedRows, title: item.title, detail: item.detail.replace("{count}", item.count.toLocaleString()) }));
+    issues.push(makeIssue({ severity: item.severity, scope: "file", file: fileName, row: item.row, column: item.column, emptyValue: Boolean(item.emptyColumn), wholeColumn: Boolean(item.emptyColumn) && item.count === checkedRows, occurrences: item.count, title: item.title, detail: item.detail.replace("{count}", item.count.toLocaleString()) }));
   }
 
   if (checkedRows < table.rowCount) {

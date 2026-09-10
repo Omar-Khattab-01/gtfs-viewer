@@ -123,6 +123,7 @@ export default function Home() {
   const [checkProgress, setCheckProgress] = useState({ running: false, fileIndex: 0, totalFiles: SAMPLE.length, fileName: "", completedRows: 0, totalRows: 0, overallPercent: 0 });
   const [showNextStep, setShowNextStep] = useState(false);
   const [focusIssue, setFocusIssue] = useState<GtfsIssue | null>(null);
+  const [focusRow, setFocusRow] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const tableFrameRef = useRef<HTMLDivElement>(null);
   const zipRef = useRef<JSZip | null>(null);
@@ -170,10 +171,8 @@ export default function Home() {
     return { displayIndex, sourceIndex, cells: activeTable.getRow(sourceIndex) };
   }), [activeTable, endIndex, filteredIndices, startIndex]);
 
-  const focusTableIssue = useCallback((issue: GtfsIssue | undefined, table: ActiveTable) => {
-    setFocusIssue(issue || null);
-    if (!issue?.row) return;
-    const rowIndex = Math.max(0, issue.row - 2);
+  const scrollToTableRow = useCallback((fileRow: number, table: ActiveTable) => {
+    const rowIndex = Math.max(0, fileRow - 2);
     const step = Math.min(ROW_HEIGHT, MAX_SCROLL_HEIGHT / Math.max(1, table.rowCount));
     requestAnimationFrame(() => {
       const top = rowIndex * step;
@@ -181,6 +180,28 @@ export default function Home() {
       setScrollTop(top);
     });
   }, []);
+
+  const focusTableIssue = useCallback((issue: GtfsIssue | undefined, table: ActiveTable) => {
+    setFocusIssue(issue || null);
+    setFocusRow(issue?.row || null);
+    if (issue?.row) scrollToTableRow(issue.row, table);
+  }, [scrollToTableRow]);
+
+  const goToNextEmptyRow = useCallback(() => {
+    if (!focusIssue?.emptyValue || focusIssue.wholeColumn || !focusIssue.column || activeTable.rowCount === 0) return;
+    const columnIndex = activeTable.columns.indexOf(focusIssue.column);
+    if (columnIndex < 0) return;
+    const currentIndex = Math.max(0, (focusRow || focusIssue.row || 2) - 2);
+    for (let offset = 1; offset <= activeTable.rowCount; offset++) {
+      const candidateIndex = (currentIndex + offset) % activeTable.rowCount;
+      if (!activeTable.getRow(candidateIndex)[columnIndex]?.trim()) {
+        const nextFileRow = candidateIndex + 2;
+        setFocusRow(nextFileRow);
+        scrollToTableRow(nextFileRow, activeTable);
+        return;
+      }
+    }
+  }, [activeTable, focusIssue, focusRow, scrollToTableRow]);
 
   const loadFeedFile = useCallback(async (file: FeedFile, issue?: GtfsIssue) => {
     const loadId = ++loadIdRef.current;
@@ -283,6 +304,7 @@ export default function Home() {
       setView("data");
       setCheckCompleted(false);
       setFocusIssue(null);
+      setFocusRow(null);
       setShowNextStep(true);
       setFeedName(file.name.replace(/\.zip$/i, ""));
       setStatus(`${feedFiles.length} files · ${formatBytes(file.size)} compressed · processed locally`);
@@ -366,11 +388,11 @@ export default function Home() {
 
         {view === "data" && <section className="viewer">
           <div className="viewer-head">
-            <div><p className="file-kicker">Viewing file</p><h2>{activeFile?.name || "No file selected"}</h2><p>{loadingFile ? `Preparing ${formatBytes(activeFile?.size || 0)} file…` : `${activeTable.rowCount.toLocaleString()} rows · ${activeTable.columns.length} columns`}</p>{focusIssue && <div className="focus-summary"><span><strong>{focusIssue.title}</strong>{focusIssue.column && ` · ${focusIssue.column}`}{focusIssue.row && ` · row ${focusIssue.row}`}</span><button onClick={() => setView("checks")}>Back to report</button><button aria-label="Clear issue highlight" onClick={() => setFocusIssue(null)}>×</button></div>}</div>
+            <div><p className="file-kicker">Viewing file</p><h2>{activeFile?.name || "No file selected"}</h2><p>{loadingFile ? `Preparing ${formatBytes(activeFile?.size || 0)} file…` : `${activeTable.rowCount.toLocaleString()} rows · ${activeTable.columns.length} columns`}</p>{focusIssue && <div className="focus-summary"><span><strong>{focusIssue.title}</strong>{focusIssue.column && ` · ${focusIssue.column}`}{focusRow && ` · row ${focusRow}`}</span>{focusIssue.emptyValue && !focusIssue.wholeColumn && (focusIssue.occurrences || 0) > 1 && <button className="next-problem" onClick={goToNextEmptyRow}>Next highlighted row ↓</button>}<button onClick={() => setView("checks")}>Back to report</button><button aria-label="Clear issue highlight" onClick={() => { setFocusIssue(null); setFocusRow(null); }}>×</button></div>}</div>
             <div className="viewer-tools"><label className={`search-box ${searchDisabled ? "disabled" : ""}`} title={searchDisabled ? "Search is disabled for very large files to keep the viewer responsive." : undefined}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchDisabled ? "Search off for large files" : "Search this file"} aria-label="Search this file" disabled={searchDisabled} />{query && <button onClick={() => setQuery("")} aria-label="Clear search">×</button>}</label><button className={`wrap-button ${wrap ? "active" : ""}`} onClick={() => setWrap((value) => !value)} title="Toggle cell text wrapping">↵ <span>Wrap</span></button></div>
           </div>
           <div ref={tableFrameRef} className="table-frame" onScroll={onTableScroll}>
-            {!loadingFile && !fileError && <table className={wrap ? "data-table wraps" : "data-table"}><thead><tr><th className="row-number">Line</th>{activeTable.columns.map((column, index) => <th key={`${column}-${index}`} className={focusIssue?.column === column && (!focusIssue.emptyValue || focusIssue.wholeColumn) ? "problem-column" : ""} style={{ "--column-color": COLORS[index % COLORS.length], "--column-accent": ACCENTS[index % ACCENTS.length] } as React.CSSProperties}><span>{column}</span></th>)}</tr></thead><tbody>{startIndex > 0 && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: startIndex * scrollStep }} /></tr>}{visibleRows.map(({ sourceIndex, cells }) => <tr key={sourceIndex} className={focusIssue?.emptyValue ? (!focusIssue.wholeColumn && focusIssue.column && !cells[activeTable.columns.indexOf(focusIssue.column)]?.trim() ? "problem-row" : "") : focusIssue?.row === sourceIndex + 2 ? "problem-row" : ""} style={{ height: ROW_HEIGHT }}><td className="row-number">{sourceIndex + 2}</td>{activeTable.columns.map((column, cellIndex) => <td key={cellIndex} className={focusIssue?.column === column && (!focusIssue.emptyValue || focusIssue.wholeColumn) ? "problem-column" : ""} style={{ "--column-color": COLORS[cellIndex % COLORS.length] } as React.CSSProperties} title={cells[cellIndex]}>{cells[cellIndex] || <span className="empty">—</span>}</td>)}</tr>)}{endIndex < displayedRowCount && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: (displayedRowCount - endIndex) * scrollStep }} /></tr>}</tbody></table>}
+            {!loadingFile && !fileError && <table className={wrap ? "data-table wraps" : "data-table"}><thead><tr><th className="row-number">Line</th>{activeTable.columns.map((column, index) => <th key={`${column}-${index}`} className={focusIssue?.column === column && (!focusIssue.emptyValue || focusIssue.wholeColumn) ? "problem-column" : ""} style={{ "--column-color": COLORS[index % COLORS.length], "--column-accent": ACCENTS[index % ACCENTS.length] } as React.CSSProperties}><span>{column}</span></th>)}</tr></thead><tbody>{startIndex > 0 && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: startIndex * scrollStep }} /></tr>}{visibleRows.map(({ sourceIndex, cells }) => <tr key={sourceIndex} className={focusIssue?.emptyValue ? (!focusIssue.wholeColumn && focusIssue.column && !cells[activeTable.columns.indexOf(focusIssue.column)]?.trim() ? `problem-row${focusRow === sourceIndex + 2 ? " active-problem-row" : ""}` : "") : focusRow === sourceIndex + 2 ? "problem-row active-problem-row" : ""} style={{ height: ROW_HEIGHT }}><td className="row-number">{sourceIndex + 2}</td>{activeTable.columns.map((column, cellIndex) => <td key={cellIndex} className={focusIssue?.column === column && (!focusIssue.emptyValue || focusIssue.wholeColumn) ? "problem-column" : ""} style={{ "--column-color": COLORS[cellIndex % COLORS.length] } as React.CSSProperties} title={cells[cellIndex]}>{cells[cellIndex] || <span className="empty">—</span>}</td>)}</tr>)}{endIndex < displayedRowCount && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: (displayedRowCount - endIndex) * scrollStep }} /></tr>}</tbody></table>}
             {loadingFile && <div className="loading-state"><span className="loading-ring" /><strong>Preparing {loadingFile}</strong><span>Large files are indexed in the background so scrolling stays smooth.</span></div>}
             {fileError && <div className="empty-state"><strong>Couldn’t open file</strong><span>{fileError}</span></div>}
             {!loadingFile && !fileError && displayedRowCount === 0 && <div className="empty-state"><strong>No matching rows</strong><span>Try a different search term.</span></div>}

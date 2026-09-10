@@ -7,6 +7,8 @@ export type GtfsIssue = {
   file?: string;
   row?: number;
   column?: string;
+  emptyValue?: boolean;
+  wholeColumn?: boolean;
   title: string;
   detail: string;
 };
@@ -97,16 +99,16 @@ export async function checkTable(
   if (missingColumns.length) return issues;
 
   const checkedRows = Math.min(table.rowCount, maxRows);
-  const counts = new Map<string, { count: number; row: number; column?: string; severity: IssueSeverity; title: string; detail: string }>();
+  const counts = new Map<string, { count: number; row: number; column?: string; emptyColumn?: string; severity: IssueSeverity; title: string; detail: string }>();
   const keys = new Set<string>();
   let previousGroup = "";
   let previousSequence = -1;
   let previousDistance: number | null = null;
 
-  const record = (key: string, row: number, severity: IssueSeverity, title: string, detail: string, column?: string) => {
+  const record = (key: string, row: number, severity: IssueSeverity, title: string, detail: string, column?: string, emptyColumn?: string) => {
     const current = counts.get(key);
     if (current) current.count++;
-    else counts.set(key, { count: 1, row, column, severity, title, detail });
+    else counts.set(key, { count: 1, row, column, emptyColumn, severity, title, detail });
   };
 
   for (let rowIndex = 0; rowIndex < checkedRows; rowIndex++) {
@@ -115,10 +117,10 @@ export async function checkTable(
     const displayRow = rowIndex + 2;
 
     for (const required of rules.required) {
-      if (!value(required)) record(`blank-${required}`, displayRow, "error", `Blank ${required}`, `Required values are empty in {count} ${checkedRows < table.rowCount ? "checked " : ""}rows.`, required);
+      if (!value(required)) record(`blank-${required}`, displayRow, "error", `Blank ${required}`, `Required values are empty in {count} ${checkedRows < table.rowCount ? "checked " : ""}rows.`, required, required);
     }
     for (const optional of optionalColumns) {
-      if (!value(optional)) record(`blank-optional-${optional}`, displayRow, "warning", `Empty optional field: ${optional}`, `The ${optional} field is empty in {count} of ${checkedRows.toLocaleString()} ${checkedRows < table.rowCount ? "checked " : ""}rows.`, optional);
+      if (!value(optional)) record(`blank-optional-${optional}`, displayRow, "warning", `Empty optional field: ${optional}`, `The ${optional} field is empty in {count} of ${checkedRows.toLocaleString()} ${checkedRows < table.rowCount ? "checked " : ""}rows.`, optional, optional);
     }
 
     // The two largest GTFS tables are ordered by their composite sequence keys;
@@ -188,7 +190,7 @@ export async function checkTable(
   onProgress?.(checkedRows, checkedRows);
 
   for (const item of counts.values()) {
-    issues.push(makeIssue({ severity: item.severity, scope: "file", file: fileName, row: item.row, column: item.column, title: item.title, detail: item.detail.replace("{count}", item.count.toLocaleString()) }));
+    issues.push(makeIssue({ severity: item.severity, scope: "file", file: fileName, row: item.row, column: item.column, emptyValue: Boolean(item.emptyColumn), wholeColumn: Boolean(item.emptyColumn) && item.count === checkedRows, title: item.title, detail: item.detail.replace("{count}", item.count.toLocaleString()) }));
   }
 
   if (checkedRows < table.rowCount) {

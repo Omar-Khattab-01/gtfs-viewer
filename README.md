@@ -1,45 +1,33 @@
 # GTFS Viewer
 
-GTFS Viewer is a browser-based viewer for static GTFS feeds. Open a zipped feed,
-browse each text file, and keep column headings visible while scrolling through
-large datasets.
+GTFS Viewer was made to make static GTFS feeds easier to read and review. In a
+regular text editor, long files quickly become difficult to follow: the header
+row disappears, similar columns blend together, and finding a problem can mean
+searching through millions of rows by hand.
+
+GTFS Viewer opens a zipped feed directly in the browser and turns its text files
+into a clear, navigable workspace. Column headings remain visible while
+scrolling, each field is colour-coded, and large files remain responsive.
+
+[Open GTFS Viewer](https://omar-khattab-01.github.io/gtfs-viewer/)
 
 ## Features
 
-- Opens standard GTFS `.zip` files locally in the browser
-- Keeps uploaded transit data on the user's device
-- Lists every `.txt` and `.csv` file in the feed
-- Uses pinned, color-coded column headers
-- Virtualizes very large files such as `shapes.txt` and `stop_times.txt`
-- Supports search for normal-sized files and optional cell wrapping
-- Checks required files and columns, duplicate keys, blank IDs, coordinate
-  ranges, dates, times, route types, colours, and sequence ordering
-- Works on desktop and mobile browsers
-
-## Local development
-
-Node.js 22 or newer is required.
-
-```bash
-npm install
-npm run dev
-```
-
-Create a production build with:
-
-```bash
-npm run build
-```
-
-## GitHub Pages
-
-Pushes to `main` are automatically built and deployed by the GitHub Actions
-workflow in `.github/workflows/deploy-pages.yml`.
-
-## Privacy
-
-GTFS feeds are decompressed and read entirely in the browser. The application
-does not upload feed contents to a server.
+- Open standard GTFS ZIP files without extracting them first
+- Browse every text and CSV file in a feed
+- Keep column headings pinned while scrolling
+- Separate fields with consistent column colours
+- Move smoothly through large files such as `stop_times.txt` and `shapes.txt`
+- Search smaller files and wrap long cell values when needed
+- Keep up to three feeds open and switch between them
+- Run a feed check separately from the file viewer
+- Check required files and fields, empty values, duplicate keys, coordinates,
+  dates, times, route types, colours, sequence order, and shape progression
+- See which files contain errors or warnings
+- Turn issue highlights on or off in the viewer
+- Read an issue description beside the affected data
+- Move between individual issues and jump to the next highlighted row
+- Process every feed locally so its contents never leave the browser
 
 ## Author
 

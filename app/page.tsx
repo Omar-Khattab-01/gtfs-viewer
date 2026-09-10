@@ -20,6 +20,19 @@ type ActiveTable = {
   getRow: (index: number) => string[];
 };
 
+type FeedSession = {
+  id: string;
+  name: string;
+  status: string;
+  files: FeedFile[];
+  activeName: string;
+  zip: JSZip;
+  entryNames: string[];
+  issues: GtfsIssue[];
+  checkedFiles: string[];
+  checkCompleted: boolean;
+};
+
 const COLORS = ["#f2e6ff", "#dff5e8", "#fff0d8", "#dceeff", "#ffe3e3", "#e5f3f4", "#f3efd8", "#e8e6ff"];
 const ACCENTS = ["#8e4ec6", "#2d8a59", "#c87619", "#3978b7", "#ca4a4a", "#27828a", "#907820", "#6656b8"];
 const ROW_HEIGHT = 35;
@@ -124,6 +137,9 @@ export default function Home() {
   const [showNextStep, setShowNextStep] = useState(false);
   const [focusIssue, setFocusIssue] = useState<GtfsIssue | null>(null);
   const [focusRow, setFocusRow] = useState<number | null>(null);
+  const [feedTabs, setFeedTabs] = useState<Array<{ id: string; name: string }>>([]);
+  const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
+  const [feedLimitMessage, setFeedLimitMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const tableFrameRef = useRef<HTMLDivElement>(null);
   const zipRef = useRef<JSZip | null>(null);
@@ -131,6 +147,7 @@ export default function Home() {
   const loadIdRef = useRef(0);
   const checkRunIdRef = useRef(0);
   const scrollFrameRef = useRef<number | null>(null);
+  const feedSessionsRef = useRef<Map<string, FeedSession>>(new Map());
 
   const activeFile = files.find((file) => file.name === activeName) || files[0];
   const searchDisabled = activeTable.rowCount > SEARCH_LIMIT;
@@ -170,6 +187,13 @@ export default function Home() {
     const sourceIndex = filteredIndices?.[displayIndex] ?? displayIndex;
     return { displayIndex, sourceIndex, cells: activeTable.getRow(sourceIndex) };
   }), [activeTable, endIndex, filteredIndices, startIndex]);
+
+  const saveCurrentFeed = useCallback(() => {
+    if (!activeFeedId) return;
+    const session = feedSessionsRef.current.get(activeFeedId);
+    if (!session) return;
+    feedSessionsRef.current.set(activeFeedId, { ...session, name: feedName, status, files, activeName, issues, checkedFiles: [...checkedFiles], checkCompleted });
+  }, [activeFeedId, activeName, checkCompleted, checkedFiles, feedName, files, issues, status]);
 
   const scrollToTableRow = useCallback((fileRow: number, table: ActiveTable) => {
     const rowIndex = Math.max(0, fileRow - 2);
@@ -235,6 +259,64 @@ export default function Home() {
     }
   }, [focusTableIssue]);
 
+  const activateFeed = useCallback((session: FeedSession) => {
+    checkRunIdRef.current++;
+    loadIdRef.current++;
+    setActiveFeedId(session.id);
+    zipRef.current = session.zip;
+    entryNamesRef.current = session.entryNames;
+    setFeedName(session.name);
+    setStatus(session.status);
+    setFiles(session.files);
+    setIssues(session.issues);
+    setCheckedFiles(new Set(session.checkedFiles));
+    setCheckCompleted(session.checkCompleted);
+    setCheckProgress({ running: false, fileIndex: 0, totalFiles: session.files.length, fileName: "", completedRows: 0, totalRows: 0, overallPercent: session.checkCompleted ? 100 : 0 });
+    setFocusIssue(null);
+    setFocusRow(null);
+    setShowNextStep(false);
+    setFeedLimitMessage("");
+    const selectedFile = session.files.find((file) => file.name === session.activeName) || session.files[0];
+    if (selectedFile) void loadFeedFile(selectedFile);
+  }, [loadFeedFile]);
+
+  const switchFeed = useCallback((id: string) => {
+    if (id === activeFeedId) return;
+    saveCurrentFeed();
+    const session = feedSessionsRef.current.get(id);
+    if (session) activateFeed(session);
+  }, [activateFeed, activeFeedId, saveCurrentFeed]);
+
+  const deleteFeed = useCallback((id: string) => {
+    const remainingTabs = feedTabs.filter((tab) => tab.id !== id);
+    feedSessionsRef.current.delete(id);
+    setFeedTabs(remainingTabs);
+    setFeedLimitMessage("");
+    if (id !== activeFeedId) return;
+    const nextSession = remainingTabs[0] ? feedSessionsRef.current.get(remainingTabs[0].id) : undefined;
+    if (nextSession) {
+      activateFeed(nextSession);
+      return;
+    }
+    checkRunIdRef.current++;
+    loadIdRef.current++;
+    setActiveFeedId(null);
+    zipRef.current = null;
+    entryNamesRef.current = SAMPLE.map((file) => file.name);
+    setFiles(SAMPLE);
+    setFeedName("Example transit feed");
+    setStatus("Example feed · choose a zip to inspect your own data");
+    setIssues([]);
+    setCheckedFiles(new Set());
+    setCheckCompleted(false);
+    setCheckProgress({ running: false, fileIndex: 0, totalFiles: SAMPLE.length, fileName: "", completedRows: 0, totalRows: 0, overallPercent: 0 });
+    setFocusIssue(null);
+    setFocusRow(null);
+    setShowNextStep(false);
+    setActiveName("stops.txt");
+    setActiveTable(tableFromSample(SAMPLE.find((file) => file.name === "stops.txt") || SAMPLE[0]));
+  }, [activateFeed, activeFeedId, feedTabs]);
+
   const runFullCheck = useCallback(async () => {
     const runId = ++checkRunIdRef.current;
     setView("checks");
@@ -276,14 +358,18 @@ export default function Home() {
   }, [files]);
 
   const loadZip = useCallback(async (file: File) => {
+    if (feedTabs.length >= 3) {
+      setFeedLimitMessage("Three feeds are already open. Delete one before opening another.");
+      return;
+    }
     if (!file.name.toLowerCase().endsWith(".zip")) {
-      setStatus("That doesn’t look like a .zip file. Try a zipped GTFS feed.");
+      setFeedLimitMessage("That doesn’t look like a .zip file. Try a zipped GTFS feed.");
       return;
     }
     try {
       checkRunIdRef.current++;
       setCheckProgress((current) => ({ ...current, running: false }));
-      setStatus("Opening feed directory…");
+      setFeedLimitMessage("Opening feed…");
       const zip = await JSZip.loadAsync(file);
       const entryNames = Object.values(zip.files).filter((entry) => !entry.dir && !entry.name.startsWith("__MACOSX/")).map((entry) => entry.name);
       const order = ["agency.txt", "stops.txt", "routes.txt", "trips.txt", "stop_times.txt", "calendar.txt", "calendar_dates.txt", "fare_attributes.txt", "fare_rules.txt", "shapes.txt", "frequencies.txt", "transfers.txt", "feed_info.txt"];
@@ -296,23 +382,32 @@ export default function Home() {
           return (aIndex < 0 ? 999 : aIndex) - (bIndex < 0 ? 999 : bIndex) || a.name.localeCompare(b.name);
         });
       if (!feedFiles.length) throw new Error("No GTFS files found");
+      saveCurrentFeed();
+      const id = crypto.randomUUID();
+      const name = file.name.replace(/\.zip$/i, "");
+      const feedStatus = `${feedFiles.length} files · ${formatBytes(file.size)} compressed · processed locally`;
+      const structureIssues = checkFeedStructure(entryNames);
+      feedSessionsRef.current.set(id, { id, name, status: feedStatus, files: feedFiles, activeName: feedFiles[0].name, zip, entryNames, issues: structureIssues, checkedFiles: [], checkCompleted: false });
+      setFeedTabs((current) => [...current, { id, name }]);
+      setActiveFeedId(id);
       zipRef.current = zip;
       entryNamesRef.current = entryNames;
       setFiles(feedFiles);
-      setIssues(checkFeedStructure(entryNames));
+      setIssues(structureIssues);
       setCheckedFiles(new Set());
       setView("data");
       setCheckCompleted(false);
       setFocusIssue(null);
       setFocusRow(null);
       setShowNextStep(true);
-      setFeedName(file.name.replace(/\.zip$/i, ""));
-      setStatus(`${feedFiles.length} files · ${formatBytes(file.size)} compressed · processed locally`);
+      setFeedName(name);
+      setStatus(feedStatus);
+      setFeedLimitMessage("");
       void loadFeedFile(feedFiles[0]);
     } catch {
-      setStatus("We couldn’t read that feed. Check that it’s a valid GTFS zip and try again.");
+      setFeedLimitMessage("We couldn’t read that feed. Check that it’s a valid GTFS zip and try again.");
     }
-  }, [loadFeedFile]);
+  }, [feedTabs.length, loadFeedFile, saveCurrentFeed]);
 
   const onInput = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -366,7 +461,7 @@ export default function Home() {
         <a className="brand" href="#top" aria-label="GTFS Viewer home"><span className="brand-mark">G</span><span>GTFS Viewer</span></a>
         <nav className="mode-switch" aria-label="Tool mode"><button className={view === "data" ? "active" : ""} onClick={() => setView("data")}>Viewer</button><button className={view === "checks" ? "active" : ""} onClick={() => setView("checks")}>Feed check{issues.length > 0 && <span>{issues.length}</span>}</button></nav>
         <div className="privacy-note"><span className="privacy-dot" /> Your data stays in this browser</div>
-        <button className="upload-button" onClick={() => inputRef.current?.click()}><span aria-hidden="true">↑</span> Open GTFS zip</button>
+        <button className="upload-button" onClick={() => inputRef.current?.click()} disabled={feedTabs.length >= 3} title={feedTabs.length >= 3 ? "Delete an open feed before adding another." : undefined}><span aria-hidden="true">↑</span> {feedTabs.length >= 3 ? "3 feeds open" : "Open GTFS zip"}</button>
         <input ref={inputRef} className="sr-only" type="file" accept=".zip,application/zip" onChange={onInput} />
       </header>
 
@@ -374,6 +469,8 @@ export default function Home() {
         <div><p className="eyebrow">GTFS files are simple—until they get big</p><h1>Stop losing track<br />of the header row.</h1></div>
         <div className="intro-copy"><p>A regular text editor turns a long GTFS file into a wall of commas. Scroll a few hundred rows and it is easy to forget which value belongs to which field.</p><p>Open the ZIP here to keep headers pinned, separate columns by colour, and check the whole feed when you need to.</p></div>
       </section>
+
+      {feedTabs.length > 0 && <section className="feed-tabs-bar" aria-label="Open GTFS feeds"><div className="feed-tabs-heading"><strong>Open feeds</strong><span>{feedTabs.length}/3</span></div><div className="feed-tabs-list">{feedTabs.map((tab) => <div key={tab.id} className={tab.id === activeFeedId ? "feed-tab active" : "feed-tab"}><button className="feed-tab-name" onClick={() => switchFeed(tab.id)} title={tab.name}><span className="feed-tab-dot" />{tab.name}</button><button className="feed-tab-delete" onClick={() => deleteFeed(tab.id)} aria-label={`Delete ${tab.name}`}>×</button></div>)}{feedTabs.length < 3 && <button className="add-feed-tab" onClick={() => inputRef.current?.click()}>＋ Add feed</button>}</div>{feedLimitMessage && <p>{feedLimitMessage}</p>}</section>}
 
       <section className={`workspace ${view === "checks" ? "check-mode" : ""} ${dragging ? "is-dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
         {dragging && <div className="drop-overlay"><strong>Drop your GTFS zip here</strong><span>We’ll open it right in your browser</span></div>}
@@ -383,7 +480,7 @@ export default function Home() {
           <div className="feed-card"><div className="feed-icon">ZIP</div><div className="feed-copy"><strong>{feedName}</strong><span>{status}</span></div></div>
           <div className="file-heading"><span>Files</span><span>{files.length}</span></div>
           <nav className="file-list" aria-label="GTFS files">{files.map((file) => <button key={file.name} className={file.name === activeFile?.name ? "file-item active" : "file-item"} onClick={() => void loadFeedFile(file)}><span className="file-glyph">≡</span><span className="file-meta"><strong>{file.name}</strong><small>{file.rowCount === null ? "Open to count rows" : `${file.rowCount.toLocaleString()} rows`} · {formatBytes(file.size)}</small></span>{issueCountByFile.get(file.name) ? <span className="issue-badge">{issueCountByFile.get(file.name)}</span> : <span className="chevron">›</span>}</button>)}</nav>
-          <button className="new-feed" onClick={() => inputRef.current?.click()}>＋ Open another feed</button>
+          <button className="new-feed" onClick={() => inputRef.current?.click()} disabled={feedTabs.length >= 3}>{feedTabs.length >= 3 ? "Delete a feed to open another" : "＋ Open another feed"}</button>
         </aside>}
 
         {view === "data" && <section className="viewer">

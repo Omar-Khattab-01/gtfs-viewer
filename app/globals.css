@@ -90,6 +90,12 @@ button { color: inherit; }
 .focus-summary button { padding: 4px 7px; border: 1px solid #d8b2aa; border-radius: 5px; background: white; color: #8e3b34; font-size: 9px; cursor: pointer; }
 .focus-summary button.next-problem { border-color: var(--green); background: var(--green); color: white; }
 .viewer-tools { display: flex; gap: 8px; align-items: center; }
+.issue-toggle { height: 35px; padding: 0 9px; border: 1px solid #d3a49e; border-radius: 7px; background: white; color: #963a32; display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 750; white-space: nowrap; cursor: pointer; }
+.issue-toggle.active { border-color: #a83c35; background: #a83c35; color: white; }
+.issue-toggle-mark { width: 17px; height: 17px; border-radius: 50%; display: grid; place-items: center; background: #f5d9d5; color: #963a32; font-weight: 900; }
+.issue-toggle.active .issue-toggle-mark { background: white; }
+.issue-toggle b { min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; display: grid; place-items: center; background: #f5d9d5; color: #963a32; font-size: 9px; }
+.issue-toggle.active b { background: white; }
 .view-toggle { height: 35px; padding: 3px; display: flex; gap: 2px; border: 1px solid #ced3ce; border-radius: 8px; background: #f3f4f1; }
 .view-toggle button { border: 0; border-radius: 5px; background: transparent; padding: 0 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .view-toggle button.active { background: white; color: var(--green); box-shadow: 0 1px 3px rgba(23,35,28,.12); }
@@ -111,7 +117,11 @@ button { color: inherit; }
 .data-table tbody tr:hover td { background: color-mix(in srgb, var(--column-color) 49%, white); }
 .data-table th.problem-column, .data-table td.problem-column { box-shadow: inset 3px 0 0 #d14f42, inset -3px 0 0 #d14f42; background: #ffe3dc; }
 .data-table tr.problem-row td { background: #fff0c7; border-top: 2px solid #d27819; border-bottom: 2px solid #d27819; }
+.data-table tr.error-problem-row td { background: #ffe0da; border-top-color: #c5483d; border-bottom-color: #c5483d; }
+.data-table .warning-problem-column { box-shadow: inset 3px 0 0 #d27819, inset -3px 0 0 #d27819; background: #fff0c7; }
+.data-table .error-problem-column { box-shadow: inset 3px 0 0 #c5483d, inset -3px 0 0 #c5483d; background: #ffe0da; }
 .data-table tr.active-problem-row td { background: #ffdfa0; border-top-color: #a94f0d; border-bottom-color: #a94f0d; }
+.data-table tr.error-problem-row.active-problem-row td { background: #ffc9bf; border-top-color: #9e2e26; border-bottom-color: #9e2e26; }
 .data-table tr.problem-row td.problem-column { background: #ffd5c8; box-shadow: inset 3px 0 0 #bd392e, inset -3px 0 0 #bd392e; }
 .data-table tbody tr:not(.virtual-spacer) { height: 35px; }
 .data-table .row-number { position: sticky; left: 0; z-index: 3; min-width: 47px; width: 47px; text-align: right; color: #909891; background: #f7f7f4; font-size: 9px; }

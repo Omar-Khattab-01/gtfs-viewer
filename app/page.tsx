@@ -31,6 +31,7 @@ type FeedSession = {
   issues: GtfsIssue[];
   checkedFiles: string[];
   checkCompleted: boolean;
+  showIssues: boolean;
 };
 
 const COLORS = ["#f2e6ff", "#dff5e8", "#fff0d8", "#dceeff", "#ffe3e3", "#e5f3f4", "#f3efd8", "#e8e6ff"];
@@ -140,6 +141,7 @@ export default function Home() {
   const [feedTabs, setFeedTabs] = useState<Array<{ id: string; name: string }>>([]);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [feedLimitMessage, setFeedLimitMessage] = useState("");
+  const [showIssues, setShowIssues] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const tableFrameRef = useRef<HTMLDivElement>(null);
   const zipRef = useRef<JSZip | null>(null);
@@ -158,6 +160,16 @@ export default function Home() {
     for (const issue of issues) if (issue.file) counts.set(issue.file, (counts.get(issue.file) || 0) + 1);
     return counts;
   }, [issues]);
+  const activeFileIssues = useMemo(() => issues.filter((issue) => issue.file === activeName), [activeName, issues]);
+  const highlightedColumns = useMemo(() => {
+    const columns = new Map<string, "error" | "warning">();
+    if (!showIssues) return columns;
+    for (const issue of activeFileIssues) {
+      if (!issue.wholeColumn || !issue.column) continue;
+      if (issue.severity === "error" || !columns.has(issue.column)) columns.set(issue.column, issue.severity);
+    }
+    return columns;
+  }, [activeFileIssues, showIssues]);
 
   useEffect(() => {
     const frame = tableFrameRef.current;
@@ -187,13 +199,32 @@ export default function Home() {
     const sourceIndex = filteredIndices?.[displayIndex] ?? displayIndex;
     return { displayIndex, sourceIndex, cells: activeTable.getRow(sourceIndex) };
   }), [activeTable, endIndex, filteredIndices, startIndex]);
+  const visibleRowsWithIssues = useMemo(() => visibleRows.map((visibleRow) => {
+    if (!showIssues) return { ...visibleRow, issueSeverity: null as "error" | "warning" | null };
+    const fileRow = visibleRow.sourceIndex + 2;
+    let issueSeverity: "error" | "warning" | null = null;
+    for (const issue of activeFileIssues) {
+      let matches = false;
+      if (issue.emptyValue && !issue.wholeColumn && issue.column) {
+        const columnIndex = activeTable.columns.indexOf(issue.column);
+        matches = columnIndex >= 0 && !visibleRow.cells[columnIndex]?.trim();
+      } else if (!issue.wholeColumn && issue.row === fileRow) {
+        matches = true;
+      }
+      if (matches) {
+        issueSeverity = issue.severity === "error" ? "error" : issueSeverity || "warning";
+        if (issueSeverity === "error") break;
+      }
+    }
+    return { ...visibleRow, issueSeverity };
+  }), [activeFileIssues, activeTable.columns, showIssues, visibleRows]);
 
   const saveCurrentFeed = useCallback(() => {
     if (!activeFeedId) return;
     const session = feedSessionsRef.current.get(activeFeedId);
     if (!session) return;
-    feedSessionsRef.current.set(activeFeedId, { ...session, name: feedName, status, files, activeName, issues, checkedFiles: [...checkedFiles], checkCompleted });
-  }, [activeFeedId, activeName, checkCompleted, checkedFiles, feedName, files, issues, status]);
+    feedSessionsRef.current.set(activeFeedId, { ...session, name: feedName, status, files, activeName, issues, checkedFiles: [...checkedFiles], checkCompleted, showIssues });
+  }, [activeFeedId, activeName, checkCompleted, checkedFiles, feedName, files, issues, showIssues, status]);
 
   const scrollToTableRow = useCallback((fileRow: number, table: ActiveTable) => {
     const rowIndex = Math.max(0, fileRow - 2);
@@ -271,6 +302,7 @@ export default function Home() {
     setIssues(session.issues);
     setCheckedFiles(new Set(session.checkedFiles));
     setCheckCompleted(session.checkCompleted);
+    setShowIssues(session.showIssues);
     setCheckProgress({ running: false, fileIndex: 0, totalFiles: session.files.length, fileName: "", completedRows: 0, totalRows: 0, overallPercent: session.checkCompleted ? 100 : 0 });
     setFocusIssue(null);
     setFocusRow(null);
@@ -309,6 +341,7 @@ export default function Home() {
     setIssues([]);
     setCheckedFiles(new Set());
     setCheckCompleted(false);
+    setShowIssues(false);
     setCheckProgress({ running: false, fileIndex: 0, totalFiles: SAMPLE.length, fileName: "", completedRows: 0, totalRows: 0, overallPercent: 0 });
     setFocusIssue(null);
     setFocusRow(null);
@@ -322,6 +355,9 @@ export default function Home() {
     setView("checks");
     setShowNextStep(false);
     setCheckCompleted(false);
+    setShowIssues(false);
+    setFocusIssue(null);
+    setFocusRow(null);
     setCheckedFiles(new Set());
     setIssues(checkFeedStructure(entryNamesRef.current));
     setCheckProgress({ running: true, fileIndex: 0, totalFiles: files.length, fileName: files[0]?.name || "", completedRows: 0, totalRows: 0, overallPercent: 0 });
@@ -387,7 +423,7 @@ export default function Home() {
       const name = file.name.replace(/\.zip$/i, "");
       const feedStatus = `${feedFiles.length} files · ${formatBytes(file.size)} compressed · processed locally`;
       const structureIssues = checkFeedStructure(entryNames);
-      feedSessionsRef.current.set(id, { id, name, status: feedStatus, files: feedFiles, activeName: feedFiles[0].name, zip, entryNames, issues: structureIssues, checkedFiles: [], checkCompleted: false });
+      feedSessionsRef.current.set(id, { id, name, status: feedStatus, files: feedFiles, activeName: feedFiles[0].name, zip, entryNames, issues: structureIssues, checkedFiles: [], checkCompleted: false, showIssues: false });
       setFeedTabs((current) => [...current, { id, name }]);
       setActiveFeedId(id);
       zipRef.current = zip;
@@ -397,6 +433,7 @@ export default function Home() {
       setCheckedFiles(new Set());
       setView("data");
       setCheckCompleted(false);
+      setShowIssues(false);
       setFocusIssue(null);
       setFocusRow(null);
       setShowNextStep(true);
@@ -432,6 +469,7 @@ export default function Home() {
     if (!issue.file) return;
     const file = files.find((candidate) => candidate.name === issue.file);
     if (!file) return;
+    setShowIssues(true);
     setView("data");
     void loadFeedFile(file, issue);
   };
@@ -486,10 +524,10 @@ export default function Home() {
         {view === "data" && <section className="viewer">
           <div className="viewer-head">
             <div><p className="file-kicker">Viewing file</p><h2>{activeFile?.name || "No file selected"}</h2><p>{loadingFile ? `Preparing ${formatBytes(activeFile?.size || 0)} file…` : `${activeTable.rowCount.toLocaleString()} rows · ${activeTable.columns.length} columns`}</p>{focusIssue && <div className="focus-summary"><span><strong>{focusIssue.title}</strong>{focusIssue.column && ` · ${focusIssue.column}`}{focusRow && ` · row ${focusRow}`}</span>{focusIssue.emptyValue && !focusIssue.wholeColumn && (focusIssue.occurrences || 0) > 1 && <button className="next-problem" onClick={goToNextEmptyRow}>Next highlighted row ↓</button>}<button onClick={() => setView("checks")}>Back to report</button><button aria-label="Clear issue highlight" onClick={() => { setFocusIssue(null); setFocusRow(null); }}>×</button></div>}</div>
-            <div className="viewer-tools"><label className={`search-box ${searchDisabled ? "disabled" : ""}`} title={searchDisabled ? "Search is disabled for very large files to keep the viewer responsive." : undefined}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchDisabled ? "Search off for large files" : "Search this file"} aria-label="Search this file" disabled={searchDisabled} />{query && <button onClick={() => setQuery("")} aria-label="Clear search">×</button>}</label><button className={`wrap-button ${wrap ? "active" : ""}`} onClick={() => setWrap((value) => !value)} title="Toggle cell text wrapping">↵ <span>Wrap</span></button></div>
+            <div className="viewer-tools">{checkCompleted && <button className={`issue-toggle ${showIssues ? "active" : ""}`} aria-pressed={showIssues} onClick={() => { const next = !showIssues; setShowIssues(next); if (!next) { setFocusIssue(null); setFocusRow(null); } }}><span className="issue-toggle-mark">!</span><span>{showIssues ? "Issues on" : "Show issues"}</span>{activeFileIssues.length > 0 && <b>{activeFileIssues.length}</b>}</button>}<label className={`search-box ${searchDisabled ? "disabled" : ""}`} title={searchDisabled ? "Search is disabled for very large files to keep the viewer responsive." : undefined}><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchDisabled ? "Search off for large files" : "Search this file"} aria-label="Search this file" disabled={searchDisabled} />{query && <button onClick={() => setQuery("")} aria-label="Clear search">×</button>}</label><button className={`wrap-button ${wrap ? "active" : ""}`} onClick={() => setWrap((value) => !value)} title="Toggle cell text wrapping">↵ <span>Wrap</span></button></div>
           </div>
           <div ref={tableFrameRef} className="table-frame" onScroll={onTableScroll}>
-            {!loadingFile && !fileError && <table className={wrap ? "data-table wraps" : "data-table"}><thead><tr><th className="row-number">Line</th>{activeTable.columns.map((column, index) => <th key={`${column}-${index}`} className={focusIssue?.column === column && (!focusIssue.emptyValue || focusIssue.wholeColumn) ? "problem-column" : ""} style={{ "--column-color": COLORS[index % COLORS.length], "--column-accent": ACCENTS[index % ACCENTS.length] } as React.CSSProperties}><span>{column}</span></th>)}</tr></thead><tbody>{startIndex > 0 && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: startIndex * scrollStep }} /></tr>}{visibleRows.map(({ sourceIndex, cells }) => <tr key={sourceIndex} className={focusIssue?.emptyValue ? (!focusIssue.wholeColumn && focusIssue.column && !cells[activeTable.columns.indexOf(focusIssue.column)]?.trim() ? `problem-row${focusRow === sourceIndex + 2 ? " active-problem-row" : ""}` : "") : focusRow === sourceIndex + 2 ? "problem-row active-problem-row" : ""} style={{ height: ROW_HEIGHT }}><td className="row-number">{sourceIndex + 2}</td>{activeTable.columns.map((column, cellIndex) => <td key={cellIndex} className={focusIssue?.column === column && (!focusIssue.emptyValue || focusIssue.wholeColumn) ? "problem-column" : ""} style={{ "--column-color": COLORS[cellIndex % COLORS.length] } as React.CSSProperties} title={cells[cellIndex]}>{cells[cellIndex] || <span className="empty">—</span>}</td>)}</tr>)}{endIndex < displayedRowCount && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: (displayedRowCount - endIndex) * scrollStep }} /></tr>}</tbody></table>}
+            {!loadingFile && !fileError && <table className={wrap ? "data-table wraps" : "data-table"}><thead><tr><th className="row-number">Line</th>{activeTable.columns.map((column, index) => { const severity = highlightedColumns.get(column); return <th key={`${column}-${index}`} className={severity ? `problem-column ${severity}-problem-column` : ""} style={{ "--column-color": COLORS[index % COLORS.length], "--column-accent": ACCENTS[index % ACCENTS.length] } as React.CSSProperties}><span>{column}</span></th>; })}</tr></thead><tbody>{startIndex > 0 && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: startIndex * scrollStep }} /></tr>}{visibleRowsWithIssues.map(({ sourceIndex, cells, issueSeverity }) => <tr key={sourceIndex} className={`${issueSeverity ? `problem-row ${issueSeverity}-problem-row` : ""}${showIssues && !focusIssue?.wholeColumn && focusRow === sourceIndex + 2 ? " active-problem-row" : ""}`.trim()} style={{ height: ROW_HEIGHT }}><td className="row-number">{sourceIndex + 2}</td>{activeTable.columns.map((column, cellIndex) => { const severity = highlightedColumns.get(column); return <td key={cellIndex} className={severity ? `problem-column ${severity}-problem-column` : ""} style={{ "--column-color": COLORS[cellIndex % COLORS.length] } as React.CSSProperties} title={cells[cellIndex]}>{cells[cellIndex] || <span className="empty">—</span>}</td>; })}</tr>)}{endIndex < displayedRowCount && <tr className="virtual-spacer" aria-hidden="true"><td colSpan={activeTable.columns.length + 1} style={{ height: (displayedRowCount - endIndex) * scrollStep }} /></tr>}</tbody></table>}
             {loadingFile && <div className="loading-state"><span className="loading-ring" /><strong>Preparing {loadingFile}</strong><span>Large files are indexed in the background so scrolling stays smooth.</span></div>}
             {fileError && <div className="empty-state"><strong>Couldn’t open file</strong><span>{fileError}</span></div>}
             {!loadingFile && !fileError && displayedRowCount === 0 && <div className="empty-state"><strong>No matching rows</strong><span>Try a different search term.</span></div>}

@@ -1,34 +1,29 @@
 # GTFS Viewer
 
-GTFS Viewer was made to make static GTFS feeds easier to read and review. In a
-regular text editor, long files quickly become difficult to follow: the header
-row disappears, similar columns blend together, and finding a problem can mean
-searching through millions of rows by hand.
+I built GTFS Viewer to make static transit feeds easier to read and review. In a regular text editor, long files quickly become difficult to follow: the header row disappears, similar columns blend together, and finding a problem can mean searching through millions of rows by hand.
 
-GTFS Viewer opens a zipped feed directly in the browser and turns its text files
-into a clear, navigable workspace. Column headings remain visible while
-scrolling, each field is colour-coded, and large files remain responsive.
+The viewer opens a zipped feed directly in the browser and turns its text files into a navigable workspace. Column headings stay visible, fields have consistent colours, and large tables use virtual scrolling.
 
 [Open GTFS Viewer](https://omar-khattab-01.github.io/gtfs-viewer/)
 
-## Features
+## What it does
 
-- Open standard GTFS ZIP files without extracting them first
-- Browse every text and CSV file in a feed
-- Keep column headings pinned while scrolling
-- Separate fields with consistent column colours
-- Move smoothly through large files such as `stop_times.txt` and `shapes.txt`
-- Search smaller files and wrap long cell values when needed
-- Keep up to three feeds open and switch between them
-- Run a feed check separately from the file viewer
-- Check required files and fields, empty values, duplicate keys, coordinates,
-  dates, times, route types, colours, sequence order, and shape progression
-- See which files contain errors or warnings
-- Turn issue highlights on or off in the viewer
-- Read an issue description beside the affected data
-- Move between individual issues and jump to the next highlighted row
-- Process every feed locally so its contents never leave the browser
+- Open standard GTFS ZIP files without extracting them first.
+- Browse text and CSV files with pinned headings and coloured columns.
+- Move through large tables such as stop times and shapes.
+- Search smaller files and wrap long cell values when needed.
+- Keep up to three feeds open and switch between them.
+- Run a feed check separately from the file viewer.
+- Check required files and fields, empty values, duplicate keys, coordinates, dates, times, route types, colours, sequence order, and shape progression.
+- Show files with errors or warnings and highlight the affected data.
+- Read issue descriptions and move between highlighted rows.
+
+## Review approach
+
+I kept file browsing and feed checks separate so a feed can be explored before or after a check. Findings link back to the data that needs attention; they are a focused review aid rather than a claim of complete GTFS compliance.
+
+Feed contents are processed locally in the browser.
 
 ## Author
 
-Omar Khattab — [omar-khattab-01](https://github.com/omar-khattab-01)
+Omar Khattab — [GitHub](https://github.com/Omar-Khattab-01)
